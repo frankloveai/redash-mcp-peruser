@@ -31,9 +31,10 @@ Model Context Protocol (MCP) server for integrating Redash with AI assistants li
 The server requires the following environment variables:
 
 - `REDASH_URL`: Your Redash instance URL (e.g., https://redash.example.com)
-- `REDASH_API_KEY`: Your Redash API key
+- `REDASH_API_KEY`: Your Redash API key for stdio/local shared-key usage
 
 Optional variables:
+
 - `REDASH_TIMEOUT`: Timeout for API requests in milliseconds (default: 30000)
 - `REDASH_MAX_RESULTS`: Maximum number of results to return (default: 1000)
 - `REDASH_EXTRA_HEADERS`: Extra HTTP headers to include with every Redash request. Accepts either a JSON object string or a semicolon/comma-separated list of `key=value` pairs.
@@ -42,41 +43,54 @@ Optional variables:
 Examples:
 
 JSON (recommended):
+
 ```
 REDASH_EXTRA_HEADERS='{"CF-Access-Client-Id":"<client_id>","CF-Access-Client-Secret":"<client_secret>"}'
 ```
 
 Key/value list:
+
 ```
 REDASH_EXTRA_HEADERS=CF-Access-Client-Id=<client_id>;CF-Access-Client-Secret=<client_secret>
 ```
 
 Notes:
-- The `Authorization` header is managed by the server (`Key <REDASH_API_KEY>`) and cannot be overridden.
+
+- In streamable HTTP deployments, omit `REDASH_API_KEY` and pass the current
+  user's key on each MCP request with `Authorization: Key <redash_api_key>`.
+- In stdio/local shared-key usage, the server uses `REDASH_API_KEY` and calls
+  Redash with `Authorization: Key <REDASH_API_KEY>`.
+- `REDASH_EXTRA_HEADERS` cannot override `Authorization`.
 - All extra headers are added to every request made to Redash.
 
 ## Installation
 
 1. Clone this repository:
+
    ```bash
    git clone https://github.com/suthio/redash-mcp.git
    cd redash-mcp
    ```
 
 2. Install dependencies:
+
    ```bash
    npm install
    ```
 
 3. Create a `.env` file with your Redash configuration:
+
    ```
    REDASH_URL=https://your-redash-instance.com
+   # Required for stdio/local shared-key usage.
+   # Omit for streamable HTTP per-user deployments.
    REDASH_API_KEY=your_api_key
    # Optional: Cloudflare Access (or other gateway) headers
    # REDASH_EXTRA_HEADERS='{"CF-Access-Client-Id":"<client_id>","CF-Access-Client-Secret":"<client_secret>"}'
    ```
 
 4. Build the project:
+
    ```bash
    npm run build
    ```
@@ -100,10 +114,7 @@ Add the following configuration (edit paths as needed):
   "mcpServers": {
     "redash": {
       "command": "npx",
-      "args": [
-         "-y",
-         "@suthio/redash-mcp"
-      ],
+      "args": ["-y", "@suthio/redash-mcp"],
       "env": {
         "REDASH_API_KEY": "your-api-key",
         "REDASH_URL": "https://your-redash-instance.com"
@@ -113,11 +124,28 @@ Add the following configuration (edit paths as needed):
 }
 ```
 
+## Usage with RakAgent Per-User Credentials
+
+Chinese documentation: [frank/per-user-zh.md](frank/per-user-zh.md).
+
+For RakAgent streamable HTTP deployments, run the server without a shared
+`REDASH_API_KEY`. Configure the MCP server with `Require User Credentials`, then
+set each user's MCP credentials to include:
+
+```text
+Header: Authorization
+Value: Key <user_redash_api_key>
+```
+
+The HTTP transport reads that request header and uses it only for the current
+MCP request.
+
 ## Available Tools
 
 ### Query Management
+
 - `list-queries`: List all available queries in Redash
-- `get-query`: Get details of a specific query 
+- `get-query`: Get details of a specific query
 - `create-query`: Create a new query in Redash
 - `update-query`: Update an existing query in Redash
 - `get-query-parameters`: Inspect saved query parameter definitions
@@ -126,14 +154,16 @@ Add the following configuration (edit paths as needed):
 - `list-data-sources`: List all available data sources
 
 ### Query Execution
+
 - `execute-query`: Execute a query and return results, with optional `maxAge`
 - `execute-parameterized-query`: Execute a saved parameterized query with type-aware value coercion, saved defaults, and optional `maxAge`
 - `execute-adhoc-query`: Execute an ad-hoc query without saving it to Redash
 - `get-query-results-csv`: Get query results in CSV format (supports optional refresh for latest data)
 
 ### Dashboard Management
+
 - `list-dashboards`: List all available dashboards
-- `get-dashboard`: Get dashboard details and visualizations 
+- `get-dashboard`: Get dashboard details and visualizations
 - `get-dashboard-layout`: Inspect widget positions, sizes, and visibility on a dashboard
 - `get-visualization`: Get details of a specific visualization
 - `get-dashboard-parameters`: Inspect dashboard parameter values and widget mappings
@@ -144,6 +174,7 @@ Add the following configuration (edit paths as needed):
 - `update-widget-parameter-mappings`: Update a widget's parameter mappings
 
 ### Visualization Management
+
 - `create-visualization`: Create a new visualization for a query
 - `update-visualization`: Update an existing visualization
 - `update-chart-visualization`: Patch chart-specific options like `globalSeriesType`, `columnMapping`, `seriesOptions`, `legend`, and axis settings
@@ -152,6 +183,7 @@ Add the following configuration (edit paths as needed):
 ## Development
 
 Run in development mode:
+
 ```bash
 npm run dev
 ```
@@ -171,10 +203,12 @@ npm run e2e:test
 ```
 
 E2E tests use these default values (can be overridden with environment variables):
+
 - `REDASH_URL`: https://demo.redash.io
 - `REDASH_API_KEY`: test_api_key
 
 Override example:
+
 ```bash
 REDASH_URL=https://your-instance.com REDASH_API_KEY=your_key npm run e2e:test
 ```

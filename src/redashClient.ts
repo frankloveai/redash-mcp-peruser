@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import * as dotenv from 'dotenv';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 import { logger } from './logger.js';
@@ -259,15 +260,81 @@ export interface RedashDestination {
   options: any;
 }
 
+type RedashRequestContext = {
+  authorization?: string;
+  clientPromise?: Promise<RedashClient>;
+};
+
+export class RedashCredentialError extends Error {
+  constructor(
+    public readonly code: 'NO_API_KEY' | 'INVALID_AUTH_HEADER',
+    message: string
+  ) {
+    super(JSON.stringify({ error: code, service: 'redash', message }));
+    this.name = 'RedashCredentialError';
+  }
+}
+
+const redashRequestContext = new AsyncLocalStorage<RedashRequestContext>();
+let fallbackClient: RedashClient | undefined;
+
+function parseRedashAuthorization(value: string | undefined): string {
+  const raw = value?.trim();
+  if (!raw) {
+    throw new RedashCredentialError(
+      'NO_API_KEY',
+      'Missing Authorization: Key <redash_api_key> header for Redash MCP request'
+    );
+  }
+
+  const match = /^Key\s+(.+)$/i.exec(raw);
+  const apiKey = match?.[1]?.trim();
+  if (!apiKey) {
+    throw new RedashCredentialError(
+      'INVALID_AUTH_HEADER',
+      'Redash MCP expects Authorization: Key <redash_api_key>'
+    );
+  }
+
+  return apiKey;
+}
+
+async function getContextClient(): Promise<RedashClient> {
+  const context = redashRequestContext.getStore();
+
+  if (context) {
+    if (!context.clientPromise) {
+      const apiKey = parseRedashAuthorization(context.authorization);
+      context.clientPromise = Promise.resolve(new RedashClient(apiKey));
+    }
+
+    return context.clientPromise;
+  }
+
+  if (!fallbackClient) {
+    fallbackClient = new RedashClient();
+  }
+
+  return fallbackClient;
+}
+
+export function withRedashAuthorization<T>(
+  authorization: string | undefined,
+  callback: () => Promise<T>
+): Promise<T> {
+  const normalizedAuthorization = authorization?.trim() || undefined;
+  return redashRequestContext.run({ authorization: normalizedAuthorization }, callback);
+}
+
 // RedashClient class for API communication
 export class RedashClient {
   private client: AxiosInstance;
   private baseUrl: string;
   private apiKey: string;
 
-  constructor() {
+  constructor(apiKey?: string) {
     this.baseUrl = process.env.REDASH_URL || '';
-    this.apiKey = process.env.REDASH_API_KEY || '';
+    this.apiKey = apiKey || process.env.REDASH_API_KEY || '';
 
     if (!this.baseUrl || !this.apiKey) {
       throw new Error('REDASH_URL and REDASH_API_KEY must be provided in .env file');
@@ -1233,5 +1300,15 @@ export class RedashClient {
   }
 }
 
-// Export a singleton instance
-export const redashClient = new RedashClient();
+export const redashClient = new Proxy({} as RedashClient, {
+  get(_target, property) {
+    return async (...args: unknown[]) => {
+      const client = await getContextClient();
+      const value = (client as any)[property];
+      if (typeof value !== 'function') {
+        return value;
+      }
+      return value.apply(client, args);
+    };
+  },
+});

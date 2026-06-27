@@ -1,0 +1,25 @@
+services:
+  redash-mcp:
+    build:
+      context: .
+      dockerfile: frank/Dockerfile
+    container_name: redash-mcp
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-5001}:8000"
+    environment:
+      - REDASH_URL=${REDASH_URL:-https://redash.raksmart.com}
+      - REDASH_TIMEOUT=${REDASH_TIMEOUT:-30000}
+      - REDASH_MAX_RESULTS=${REDASH_MAX_RESULTS:-1000}
+      - REDASH_EXTRA_HEADERS=${REDASH_EXTRA_HEADERS:-}
+      - REDASH_SOCKS_PROXY=${REDASH_SOCKS_PROXY:-}
+      - MCP_TRANSPORT=streamable-http
+      - HOST=0.0.0.0
+      - PORT=8000
+      - MCP_PATH=/mcp
+    networks:
+      - redash_mcp_default
+
+networks:
+  redash_mcp_default:
+    external: true

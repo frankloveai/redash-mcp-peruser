@@ -11,8 +11,9 @@ if (existsSync(envPath)) {
   dotenv.config({ path: envPath });
 }
 
-// Check required environment variables
-const requiredVars = ['REDASH_URL', 'REDASH_API_KEY'];
+// Check required environment variables. In streamable-http mode, Redash API
+// keys are provided per request through Authorization: Key <redash_api_key>.
+const requiredVars = ['REDASH_URL'];
 const missingVars = requiredVars.filter(varName => !process.env[varName]);
 
 if (missingVars.length > 0) {
@@ -21,11 +22,10 @@ if (missingVars.length > 0) {
   console.error('Please create a .env file in your current directory with the following variables:');
   console.error('');
   console.error('REDASH_URL=https://your-redash-instance.com');
-  console.error('REDASH_API_KEY=your_api_key');
   console.error('');
   console.error('Or provide them when running the command:');
   console.error('');
-  console.error('REDASH_URL=https://your-redash-instance.com REDASH_API_KEY=your_key npx @suthio/redash-mcp');
+  console.error('REDASH_URL=https://your-redash-instance.com npx @suthio/redash-mcp');
   process.exit(1);
 }
 

@@ -2,15 +2,17 @@
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
   ListResourcesRequestSchema,
   ReadResourceRequestSchema
 } from "@modelcontextprotocol/sdk/types.js";
+import { createServer, IncomingMessage } from "node:http";
 import { z, type ZodTypeAny } from "zod";
 import * as dotenv from 'dotenv';
-import { redashClient, CreateQueryRequest, UpdateQueryRequest, CreateVisualizationRequest, UpdateVisualizationRequest, CreateDashboardRequest, UpdateDashboardRequest, CreateAlertRequest, UpdateAlertRequest, CreateAlertSubscriptionRequest, CreateWidgetRequest, UpdateWidgetRequest, CreateQuerySnippetRequest, UpdateQuerySnippetRequest } from "./redashClient.js";
+import { redashClient, withRedashAuthorization, CreateQueryRequest, UpdateQueryRequest, CreateVisualizationRequest, UpdateVisualizationRequest, CreateDashboardRequest, UpdateDashboardRequest, CreateAlertRequest, UpdateAlertRequest, CreateAlertSubscriptionRequest, CreateWidgetRequest, UpdateWidgetRequest, CreateQuerySnippetRequest, UpdateQuerySnippetRequest } from "./redashClient.js";
 import { buildChartVisualizationOptions, chartVisualizationUpdateSchema } from "./chartVisualization.js";
 import { mergeNamedEntries, queryParameterPatchSchema, resolveParameterOrder, toNamedEntries, toNamedRecord, widgetParameterMappingPatchSchema } from "./parameterManagement.js";
 import { buildInputSchema, type JsonSchemaDescriptionMap } from "./jsonSchema.js";
@@ -22,6 +24,7 @@ import { logger, LogLevel } from "./logger.js";
 // Load environment variables
 dotenv.config();
 
+function createMcpServer() {
 // Create MCP server instance
 const server = new Server(
   {
@@ -2812,15 +2815,92 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-// Start the server with stdio transport
+return server;
+}
+
+function getHeader(req: IncomingMessage, name: string): string | undefined {
+  const value = req.headers[name.toLowerCase()];
+  if (Array.isArray(value)) return value[0];
+  return value;
+}
+
+function getPath(req: IncomingMessage): string {
+  const url = new URL(req.url || '/', 'http://localhost');
+  return url.pathname;
+}
+
+async function startStdioServer() {
+  const server = createMcpServer();
+  const transport = new StdioServerTransport();
+
+  logger.info("Starting Redash MCP server with stdio transport...");
+  await server.connect(transport);
+  logger.setServer(server);
+  logger.info("Redash MCP server connected!");
+}
+
+async function startStreamableHttpServer() {
+  const port = parseInt(process.env.PORT || '8000', 10);
+  const host = process.env.HOST || '0.0.0.0';
+  const path = process.env.MCP_PATH || '/mcp';
+
+  const httpServer = createServer(async (req, res) => {
+    const requestPath = getPath(req);
+
+    if (requestPath === '/healthz') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok' }));
+      return;
+    }
+
+    if (requestPath !== path) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'NotFound', message: `Use ${path} for MCP requests` }));
+      return;
+    }
+
+    const authorization = getHeader(req, 'authorization');
+
+    try {
+      const server = createMcpServer();
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+      });
+      await server.connect(transport);
+      logger.setServer(server);
+      await withRedashAuthorization(authorization, () => transport.handleRequest(req, res));
+    } catch (error) {
+      logger.error(`HTTP MCP request failed: ${error instanceof Error ? error.message : String(error)}`);
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          error: 'InternalServerError',
+          message: error instanceof Error ? error.message : String(error),
+        }));
+      } else {
+        res.end();
+      }
+    }
+  });
+
+  httpServer.listen(port, host, () => {
+    logger.info(`Redash MCP server listening on http://${host}:${port}${path}`);
+  });
+}
+
+// Start the server
 async function main() {
   try {
-    const transport = new StdioServerTransport();
-
-    logger.info("Starting Redash MCP server...");
-    await server.connect(transport);
-    logger.setServer(server);
-    logger.info("Redash MCP server connected!");
+    const transport = (process.env.MCP_TRANSPORT || process.env.TRANSPORT || 'streamable-http').toLowerCase();
+    if (transport === 'stdio') {
+      await startStdioServer();
+      return;
+    }
+    if (transport === 'streamable-http' || transport === 'http') {
+      await startStreamableHttpServer();
+      return;
+    }
+    throw new Error(`Unsupported MCP transport: ${transport}`);
   } catch (error) {
     logger.error(`Failed to start server: ${error}`);
     process.exit(1);
