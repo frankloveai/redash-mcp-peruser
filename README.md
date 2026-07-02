@@ -36,7 +36,8 @@ The server requires the following environment variables:
 Optional variables:
 
 - `REDASH_TIMEOUT`: Timeout for API requests in milliseconds (default: 30000)
-- `REDASH_MAX_RESULTS`: Maximum number of results to return (default: 1000)
+- `REDASH_MAX_RESULTS`: Maximum number of query result rows to return to the MCP client (default: 1000)
+- `REDASH_MAX_RESULT_CHARS`: Maximum query result characters to return to the MCP client (default: 500000)
 - `REDASH_EXTRA_HEADERS`: Extra HTTP headers to include with every Redash request. Accepts either a JSON object string or a semicolon/comma-separated list of `key=value` pairs.
 - `REDASH_SOCKS_PROXY`: SOCKS proxy URL for routing requests through a proxy (e.g., `socks5h://localhost:1080`). Use `socks5h://` (with `h`) to delegate DNS resolution to the proxy, which is required for internal hostnames that don't resolve on the local machine.
 
@@ -159,6 +160,8 @@ MCP request.
 - `execute-parameterized-query`: Execute a saved parameterized query with type-aware value coercion, saved defaults, and optional `maxAge`
 - `execute-adhoc-query`: Execute an ad-hoc query without saving it to Redash
 - `get-query-results-csv`: Get query results in CSV format (supports optional refresh for latest data)
+
+Query execution responses are capped by `REDASH_MAX_RESULTS` and `REDASH_MAX_RESULT_CHARS`; truncated JSON responses include `mcp_result_limit` metadata.
 
 ### Dashboard Management
 

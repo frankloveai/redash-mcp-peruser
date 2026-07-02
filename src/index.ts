@@ -20,6 +20,7 @@ import { buildParameterizedExecutionParameters, ParameterizedExecutionError } fr
 import { mergeDeep } from "./utils.js";
 import { buildWidgetLayoutOptions, dashboardGridDefaults, summarizeWidgetLayout, widgetLayoutEntrySchema, widgetPositionSchema } from "./widgetLayout.js";
 import { logger, LogLevel } from "./logger.js";
+import { formatQueryResultForMcp, truncateText } from "./queryResultFormatter.js";
 
 // Load environment variables
 dotenv.config();
@@ -406,7 +407,7 @@ async function executeQuery(params: z.infer<typeof executeQuerySchema>) {
       content: [
         {
           type: "text",
-          text: JSON.stringify(result, null, 2)
+          text: formatQueryResultForMcp(result)
         }
       ]
     };
@@ -447,12 +448,11 @@ async function executeParameterizedQuery(params: z.infer<typeof executeParameter
       content: [
         {
           type: "text",
-          text: JSON.stringify({
+          text: truncateText(`${JSON.stringify({
             queryId: query.id,
             name: query.name,
-            effectiveParameters,
-            result
-          }, null, 2)
+            effectiveParameters
+          }, null, 2)}\n\nResult:\n${formatQueryResultForMcp(result)}`)
         }
       ]
     };
@@ -497,7 +497,7 @@ async function getQueryResultsCsv(params: z.infer<typeof getQueryResultsCsvSchem
       content: [
         {
           type: "text",
-          text: csv
+          text: truncateText(csv)
         }
       ]
     };
@@ -695,7 +695,7 @@ async function executeAdhocQuery(params: z.infer<typeof executeAdhocQuerySchema>
       content: [
         {
           type: "text",
-          text: JSON.stringify(result, null, 2)
+          text: formatQueryResultForMcp(result)
         }
       ]
     };
